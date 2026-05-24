@@ -51,7 +51,7 @@ jobs:
           status=${PIPESTATUS[1]}
           exit $status
 
-      - name: Install Android packages (AIDL is in build-tools)
+      - name: Install Android packages (AIDL is in Build-Tools)
         shell: bash
         run: |
           set -e
@@ -61,17 +61,13 @@ jobs:
             "build-tools;33.0.2" \
             "ndk;25.2.9519653"
 
-      - name: Force Buildozer to use Actions SDK/NDK + put aidl on PATH
+          test -x "$ANDROID_SDK_ROOT/build-tools/33.0.2/aidl"
+          "$ANDROID_SDK_ROOT/build-tools/33.0.2/aidl" --version || true
+
+      - name: Force Buildozer to use Actions SDK/NDK (patch buildozer.spec)
         shell: bash
         run: |
           set -e
-          SDKROOT="$ANDROID_SDK_ROOT"
-          NDKROOT="$SDKROOT/ndk/25.2.9519653"
-
-          test -x "$SDKROOT/build-tools/33.0.2/aidl"
-          echo "$SDKROOT/build-tools/33.0.2" >> "$GITHUB_PATH"
-          echo "$SDKROOT/platform-tools" >> "$GITHUB_PATH"
-
           python3 - <<'PY'
           import os, re, pathlib
           sdk = os.environ["ANDROID_SDK_ROOT"]
@@ -90,7 +86,7 @@ jobs:
           s = upsert("android.sdk_path", sdk, s)
           s = upsert("android.ndk_path", ndk, s)
           p.write_text(s, encoding="utf-8")
-          print("Patched buildozer.spec to use ANDROID_SDK_ROOT")
+          print("buildozer.spec patched to use ANDROID_SDK_ROOT")
           PY
 
       - name: Install Buildozer + Cython
@@ -102,8 +98,15 @@ jobs:
         shell: bash
         run: |
           set -e
-          which sdkmanager
+          export ANDROIDSDK="$ANDROID_SDK_ROOT"
+          export ANDROID_HOME="$ANDROID_SDK_ROOT"
+          export ANDROID_SDK_ROOT="$ANDROID_SDK_ROOT"
+          export ANDROIDNDK="$ANDROID_SDK_ROOT/ndk/25.2.9519653"
+          export PATH="$ANDROID_SDK_ROOT/build-tools/33.0.2:$ANDROID_SDK_ROOT/platform-tools:$PATH"
+
           which aidl
+          aidl --version || true
+
           buildozer -v android debug
 
       - name: Collect APK(s)
