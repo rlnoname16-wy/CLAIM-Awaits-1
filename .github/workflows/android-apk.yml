@@ -10,13 +10,16 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Set up Python 3.11.9
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11.9"
 
-      - uses: actions/setup-java@v4
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
@@ -32,53 +35,47 @@ jobs:
             libffi-dev libssl-dev \
             python3-dev
 
-      - name: Set up Android SDK tools (sdkmanager)
+      - name: Set up Android SDK tools
         uses: android-actions/setup-android@v3
 
-      - name: Install Build-Tools/NDK into Buildozer SDK folder (AIDL fix)
+      - name: Ensure sdkmanager on PATH
         shell: bash
         run: |
-          set -e
-          SDKROOT="$HOME/.buildozer/android/platform/android-sdk"
-          mkdir -p "$SDKROOT"
+          echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
 
-          # Accept licenses for THIS sdk_root (avoid failing on "yes: Broken pipe")
+      - name: Accept SDK licenses (no broken pipe failure)
+        shell: bash
+        run: |
           set +o pipefail
-          yes | sdkmanager --sdk_root="$SDKROOT" --licenses
-          lic_status=${PIPESTATUS[1]}
-          exit $lic_status
+          yes | sdkmanager --licenses
+          status=${PIPESTATUS[1]}
+          exit $status
 
-      - name: Install Android packages (creates build-tools/aidl)
+      - name: Install Android packages (AIDL is in build-tools)
         shell: bash
         run: |
           set -e
-          SDKROOT="$HOME/.buildozer/android/platform/android-sdk"
-
-          sdkmanager --sdk_root="$SDKROOT" --install \
+          sdkmanager --install \
             "platform-tools" \
             "platforms;android-33" \
             "build-tools;33.0.2" \
-            "build-tools;37.0.0" \
             "ndk;25.2.9519653"
 
-          ls -la "$SDKROOT/build-tools"
+      - name: Force Buildozer to use Actions SDK/NDK + put aidl on PATH
+        shell: bash
+        run: |
+          set -e
+          SDKROOT="$ANDROID_SDK_ROOT"
+          NDKROOT="$SDKROOT/ndk/25.2.9519653"
 
-          AIDL_PATH="$(find "$SDKROOT/build-tools" -type f -name aidl | sort -V | tail -n 1)"
-          echo "AIDL_PATH=$AIDL_PATH"
-          test -n "$AIDL_PATH"
-          test -x "$AIDL_PATH"
+          test -x "$SDKROOT/build-tools/33.0.2/aidl"
+          echo "$SDKROOT/build-tools/33.0.2" >> "$GITHUB_PATH"
+          echo "$SDKROOT/platform-tools" >> "$GITHUB_PATH"
 
-          echo "ANDROIDSDK=$SDKROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_HOME=$SDKROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$SDKROOT" >> "$GITHUB_ENV"
-          echo "ANDROIDNDK=$SDKROOT/ndk/25.2.9519653" >> "$GITHUB_ENV"
-          echo "PATH=$(dirname "$AIDL_PATH"):$SDKROOT/platform-tools:$PATH" >> "$GITHUB_ENV"
-
-          # Force Buildozer to use this same SDK/NDK
           python3 - <<'PY'
           import os, re, pathlib
-          sdk = os.path.expanduser("~/.buildozer/android/platform/android-sdk")
-          ndk = sdk + "/ndk/25.2.9519653"
+          sdk = os.environ["ANDROID_SDK_ROOT"]
+          ndk = os.path.join(sdk, "ndk", "25.2.9519653")
           p = pathlib.Path("buildozer.spec")
           s = p.read_text(encoding="utf-8")
 
@@ -93,7 +90,7 @@ jobs:
           s = upsert("android.sdk_path", sdk, s)
           s = upsert("android.ndk_path", ndk, s)
           p.write_text(s, encoding="utf-8")
-          print("Patched buildozer.spec to use Buildozer SDK/NDK")
+          print("Patched buildozer.spec to use ANDROID_SDK_ROOT")
           PY
 
       - name: Install Buildozer + Cython
@@ -105,8 +102,8 @@ jobs:
         shell: bash
         run: |
           set -e
+          which sdkmanager
           which aidl
-          aidl --version || true
           buildozer -v android debug
 
       - name: Collect APK(s)
@@ -118,7 +115,8 @@ jobs:
           find . -type f -name "*.apk" -exec cp -v {} dist/ \;
           ls -la dist
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
         with:
           name: apk
           path: dist/*.apk
