@@ -18,7 +18,7 @@ jobs:
         with:
           python-version: "3.11.9"
 
-      - name: Set up Java 17 (required by sdkmanager)
+      - name: Set up Java 17 (sdkmanager needs this)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -38,47 +38,37 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK packages (aidl is in build-tools)
+      - name: Install SDK/NDK + ensure aidl + build APK
         shell: bash
         run: |
+          set -euo pipefail
+
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+
+          # Install required Android packages (aidl is inside build-tools)
           sdkmanager --install \
             "platform-tools" \
             "platforms;android-33" \
             "build-tools;33.0.2" \
             "ndk;25.2.9519653"
 
-      - name: Accept Android SDK licenses (no broken pipe failure)
-        shell: bash
-        run: |
+          # Accept licenses WITHOUT failing on "yes: Broken pipe"
           set +o pipefail
           yes | sdkmanager --licenses
           exit ${PIPESTATUS[1]}
 
-      - name: Export SDK vars + make aidl available for ALL next steps
-        shell: bash
-        run: |
-          echo "ANDROIDSDK=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
+          # Force Buildozer/p4a to use this SDK path
+          export ANDROIDSDK="$ANDROID_SDK_ROOT"
+          export ANDROID_HOME="$ANDROID_SDK_ROOT"
 
-          # Find aidl (robust if build-tools version changes)
-          AIDL_PATH="$(find "$ANDROID_SDK_ROOT/build-tools" -type f -name aidl | sort -V | tail -n 1)"
-          test -n "$AIDL_PATH"
-          echo "PATH=$(dirname "$AIDL_PATH"):$PATH" >> "$GITHUB_ENV"
-
-      - name: Verify aidl
-        shell: bash
-        run: |
-          which aidl
+          # Make sure aidl is callable (same shell session as buildozer)
+          export PATH="$ANDROID_SDK_ROOT/build-tools/33.0.2:$PATH"
+          test -x "$ANDROID_SDK_ROOT/build-tools/33.0.2/aidl"
           aidl --version || true
 
-      - name: Install Buildozer + Cython
-        run: |
           python -m pip install --upgrade pip
           python -m pip install buildozer cython
 
-      - name: Build APK (debug)
-        shell: bash
-        run: |
           buildozer -v android debug
 
       - name: Upload APK artifact
