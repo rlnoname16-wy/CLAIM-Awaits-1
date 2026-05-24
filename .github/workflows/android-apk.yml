@@ -13,7 +13,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python 3.11.9
         uses: actions/setup-python@v5
         with:
           python-version: "3.11.9"
@@ -30,7 +30,24 @@ jobs:
             libffi-dev libssl-dev \
             python3-dev
 
-      - name: Cache Buildozer/Gradle downloads
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages (includes aidl)
+        run: |
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-33" \
+            "build-tools;33.0.2" \
+            "ndk;25.2.9519653"
+          yes | sdkmanager --licenses
+
+      - name: Sanity check: aidl exists
+        run: |
+          "$ANDROID_SDK_ROOT/build-tools/33.0.2/aidl" --version || true
+          ls -la "$ANDROID_SDK_ROOT/build-tools/33.0.2/aidl"
+
+      - name: Cache Buildozer/Gradle
         uses: actions/cache@v4
         with:
           path: |
@@ -46,6 +63,9 @@ jobs:
           python -m pip install buildozer cython
 
       - name: Build APK (debug)
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
+          ANDROIDSDK: ${{ env.ANDROID_SDK_ROOT }}
         run: |
           buildozer -v android debug
 
@@ -54,3 +74,4 @@ jobs:
         with:
           name: apk
           path: bin/*.apk
+
