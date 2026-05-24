@@ -10,21 +10,18 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python 3.11.9
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11.9"
 
-      - name: Set up Java 17
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Install Linux dependencies
+      - name: Install Linux deps
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -38,43 +35,50 @@ jobs:
       - name: Set up Android SDK tools (sdkmanager)
         uses: android-actions/setup-android@v3
 
-      - name: Accept Android SDK licenses (no broken pipe failure)
-        shell: bash
-        run: |
-          set +o pipefail
-          yes | sdkmanager --licenses
-          status=${PIPESTATUS[1]}
-          exit $status
-
-      - name: Install Android SDK packages (includes AIDL)
+      - name: Install Build-Tools/NDK into Buildozer SDK folder (AIDL fix)
         shell: bash
         run: |
           set -e
-          sdkmanager --install \
+          SDKROOT="$HOME/.buildozer/android/platform/android-sdk"
+          mkdir -p "$SDKROOT"
+
+          # Accept licenses for THIS sdk_root (avoid failing on "yes: Broken pipe")
+          set +o pipefail
+          yes | sdkmanager --sdk_root="$SDKROOT" --licenses
+          lic_status=${PIPESTATUS[1]}
+          exit $lic_status
+
+      - name: Install Android packages (creates build-tools/aidl)
+        shell: bash
+        run: |
+          set -e
+          SDKROOT="$HOME/.buildozer/android/platform/android-sdk"
+
+          sdkmanager --sdk_root="$SDKROOT" --install \
             "platform-tools" \
             "platforms;android-33" \
             "build-tools;33.0.2" \
+            "build-tools;37.0.0" \
             "ndk;25.2.9519653"
 
-      - name: Locate AIDL + force Buildozer to use this SDK/NDK
-        shell: bash
-        run: |
-          set -e
-          SDKROOT="${ANDROID_SDK_ROOT:-}"
-          test -n "$SDKROOT"
+          ls -la "$SDKROOT/build-tools"
 
           AIDL_PATH="$(find "$SDKROOT/build-tools" -type f -name aidl | sort -V | tail -n 1)"
           echo "AIDL_PATH=$AIDL_PATH"
           test -n "$AIDL_PATH"
           test -x "$AIDL_PATH"
 
-          echo "$(dirname "$AIDL_PATH")" >> "$GITHUB_PATH"
-          echo "$SDKROOT/platform-tools" >> "$GITHUB_PATH"
+          echo "ANDROIDSDK=$SDKROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=$SDKROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDKROOT" >> "$GITHUB_ENV"
+          echo "ANDROIDNDK=$SDKROOT/ndk/25.2.9519653" >> "$GITHUB_ENV"
+          echo "PATH=$(dirname "$AIDL_PATH"):$SDKROOT/platform-tools:$PATH" >> "$GITHUB_ENV"
 
+          # Force Buildozer to use this same SDK/NDK
           python3 - <<'PY'
           import os, re, pathlib
-          sdk = os.environ["ANDROID_SDK_ROOT"]
-          ndk = os.path.join(sdk, "ndk", "25.2.9519653")
+          sdk = os.path.expanduser("~/.buildozer/android/platform/android-sdk")
+          ndk = sdk + "/ndk/25.2.9519653"
           p = pathlib.Path("buildozer.spec")
           s = p.read_text(encoding="utf-8")
 
@@ -89,7 +93,7 @@ jobs:
           s = upsert("android.sdk_path", sdk, s)
           s = upsert("android.ndk_path", ndk, s)
           p.write_text(s, encoding="utf-8")
-          print("Patched buildozer.spec (android.sdk_path + android.ndk_path)")
+          print("Patched buildozer.spec to use Buildozer SDK/NDK")
           PY
 
       - name: Install Buildozer + Cython
@@ -114,8 +118,7 @@ jobs:
           find . -type f -name "*.apk" -exec cp -v {} dist/ \;
           ls -la dist
 
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: apk
           path: dist/*.apk
