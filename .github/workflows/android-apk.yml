@@ -45,7 +45,6 @@ jobs:
 
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
 
-          # Install required Android packages (aidl is inside build-tools)
           sdkmanager --install \
             "platform-tools" \
             "platforms;android-33" \
@@ -57,11 +56,9 @@ jobs:
           yes | sdkmanager --licenses
           exit ${PIPESTATUS[1]}
 
-          # Force Buildozer/p4a to use this SDK path
           export ANDROIDSDK="$ANDROID_SDK_ROOT"
           export ANDROID_HOME="$ANDROID_SDK_ROOT"
 
-          # Make sure aidl is callable (same shell session as buildozer)
           export PATH="$ANDROID_SDK_ROOT/build-tools/33.0.2:$PATH"
           test -x "$ANDROID_SDK_ROOT/build-tools/33.0.2/aidl"
           aidl --version || true
@@ -75,4 +72,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: apk
-          path: bin/*.apk
+          path: |
+            bin/*.apk
+            .buildozer/android/platform/build-*/outputs/apk/debug/*.apk
+            .buildozer/android/platform/build-*/outputs/apk/release/*.apk
+          if-no-files-found: error
