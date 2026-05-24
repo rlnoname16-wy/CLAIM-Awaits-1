@@ -93,6 +93,4 @@ jobs:
         with:
           name: apk
           path: dist/*.apk
-          if-no-files-found: error          name: apk
-          path: dist/*.apk
           if-no-files-found: error
