@@ -39,7 +39,6 @@ jobs:
         shell: bash
         run: |
           set -e
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
           sdkmanager --install \
             "platform-tools" \
             "platforms;android-33" \
@@ -54,26 +53,19 @@ jobs:
           status=${PIPESTATUS[1]}
           exit $status
 
-      - name: Locate aidl + export env for Buildozer
+      - name: Find aidl
         shell: bash
         run: |
           set -e
-          SDKROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
-          echo "SDKROOT=$SDKROOT"
-          test -n "$SDKROOT"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          ls -la "$ANDROID_SDK_ROOT/build-tools" || true
+          find "$ANDROID_SDK_ROOT/build-tools" -type f -name aidl -print || true
 
-          test -d "$SDKROOT/build-tools" || (echo "No build-tools folder under SDKROOT"; ls -la "$SDKROOT"; exit 1)
-
-          AIDL_PATH="$(find "$SDKROOT/build-tools" -type f -name aidl | sort -V | tail -n 1)"
-          echo "AIDL_PATH=$AIDL_PATH"
-          test -n "$AIDL_PATH"
-          test -x "$AIDL_PATH"
-
-          echo "ANDROIDSDK=$SDKROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_HOME=$SDKROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$SDKROOT" >> "$GITHUB_ENV"
-          echo "ANDROIDNDK=$SDKROOT/ndk/25.2.9519653" >> "$GITHUB_ENV"
-          echo "PATH=$(dirname "$AIDL_PATH"):$SDKROOT/platform-tools:$PATH" >> "$GITHUB_ENV"
+      - name: Put aidl on PATH (for next steps)
+        shell: bash
+        run: |
+          echo "$ANDROID_SDK_ROOT/build-tools/33.0.2" >> "$GITHUB_PATH"
+          echo "$ANDROID_SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
 
       - name: Install Buildozer + Cython
         run: |
@@ -84,7 +76,9 @@ jobs:
         shell: bash
         run: |
           set -e
-          which aidl
+          export ANDROIDSDK="$ANDROID_SDK_ROOT"
+          export ANDROID_HOME="$ANDROID_SDK_ROOT"
+          which aidl || true
           aidl --version || true
           buildozer -v android debug
 
