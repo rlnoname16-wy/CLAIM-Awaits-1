@@ -18,7 +18,7 @@ jobs:
         with:
           python-version: "3.11.9"
 
-      - name: Set up Java 17 (sdkmanager needs this)
+      - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -38,7 +38,7 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install SDK/NDK + ensure aidl + build APK
+      - name: Build APK (install SDK/NDK + ensure aidl + buildozer)
         shell: bash
         run: |
           set -euo pipefail
@@ -68,12 +68,19 @@ jobs:
 
           buildozer -v android debug
 
+      - name: Collect APK(s)
+        shell: bash
+        run: |
+          set -e
+          mkdir -p dist
+          echo "Searching for APKs..."
+          find . -type f $ -name "*-debug.apk" -o -name "*-release.apk" -o -name "*.apk" $ -print
+          find . -type f $ -name "*-debug.apk" -o -name "*-release.apk" -o -name "*.apk" $ -exec cp -v {} dist/ \;
+          ls -la dist
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: apk
-          path: |
-            bin/*.apk
-            .buildozer/android/platform/build-*/outputs/apk/debug/*.apk
-            .buildozer/android/platform/build-*/outputs/apk/release/*.apk
+          path: dist/*.apk
           if-no-files-found: error
