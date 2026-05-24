@@ -21,7 +21,7 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Install Linux dependencies
+      - name: Install Linux deps
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -35,15 +35,11 @@ jobs:
       - name: Set up Android SDK (sdkmanager)
         uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK packages (available set)
+      - name: Install Android SDK packages
         shell: bash
         run: |
           set -e
           SDKROOT="$HOME/android-sdk"
-
-          # Show available packages (helps avoid "package not found")
-          sdkmanager --sdk_root="$SDKROOT" --list | head -n 200
-
           sdkmanager --sdk_root="$SDKROOT" --install \
             "platform-tools" \
             "platforms;android-33" \
@@ -59,6 +55,23 @@ jobs:
           status=${PIPESTATUS[1]}
           exit $status
 
+      - name: Locate aidl and export env (fail if missing)
+        shell: bash
+        run: |
+          set -e
+          SDKROOT="$HOME/android-sdk"
+
+          AIDL_PATH="$(find "$SDKROOT/build-tools" -type f -name aidl | sort -V | tail -n 1)"
+          echo "AIDL_PATH=$AIDL_PATH"
+          test -n "$AIDL_PATH"
+          test -x "$AIDL_PATH"
+
+          echo "ANDROIDSDK=$SDKROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=$SDKROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDKROOT" >> "$GITHUB_ENV"
+          echo "ANDROIDNDK=$SDKROOT/ndk/25.2.9519653" >> "$GITHUB_ENV"
+          echo "PATH=$(dirname "$AIDL_PATH"):$SDKROOT/platform-tools:$PATH" >> "$GITHUB_ENV"
+
       - name: Install Buildozer + Cython
         run: |
           python -m pip install --upgrade pip
@@ -68,12 +81,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          SDKROOT="$HOME/android-sdk"
-          export ANDROIDSDK="$SDKROOT"
-          export ANDROID_HOME="$SDKROOT"
-          export ANDROID_SDK_ROOT="$SDKROOT"
-          export ANDROIDNDK="$SDKROOT/ndk/25.2.9519653"
-          export PATH="$SDKROOT/build-tools/33.0.2:$SDKROOT/platform-tools:$PATH"
+          which aidl
           aidl --version || true
           buildozer -v android debug
 
