@@ -24,7 +24,7 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Install Linux deps
+      - name: Install Linux dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -35,7 +35,7 @@ jobs:
             libffi-dev libssl-dev \
             python3-dev
 
-      - name: Set up Android SDK tools
+      - name: Set up Android SDK tools (sdkmanager)
         uses: android-actions/setup-android@v3
 
       - name: Ensure sdkmanager on PATH
@@ -62,32 +62,6 @@ jobs:
             "ndk;25.2.9519653"
 
           test -x "$ANDROID_SDK_ROOT/build-tools/33.0.2/aidl"
-          "$ANDROID_SDK_ROOT/build-tools/33.0.2/aidl" --version || true
-
-      - name: Force Buildozer to use Actions SDK/NDK (patch buildozer.spec)
-        shell: bash
-        run: |
-          set -e
-          python3 - <<'PY'
-          import os, re, pathlib
-          sdk = os.environ["ANDROID_SDK_ROOT"]
-          ndk = os.path.join(sdk, "ndk", "25.2.9519653")
-          p = pathlib.Path("buildozer.spec")
-          s = p.read_text(encoding="utf-8")
-
-          def upsert(key, val, text):
-              pat = re.compile(rf"^\s*{re.escape(key)}\s*=.*$", re.M)
-              if pat.search(text):
-                  return pat.sub(f"{key} = {val}", text)
-              m = re.search(r"^$$buildozer$$\s*$", text, re.M)
-              ins = f"{key} = {val}\n"
-              return text[:m.start()] + ins + text[m.start():] if m else text + "\n" + ins
-
-          s = upsert("android.sdk_path", sdk, s)
-          s = upsert("android.ndk_path", ndk, s)
-          p.write_text(s, encoding="utf-8")
-          print("buildozer.spec patched to use ANDROID_SDK_ROOT")
-          PY
 
       - name: Install Buildozer + Cython
         run: |
@@ -98,15 +72,9 @@ jobs:
         shell: bash
         run: |
           set -e
-          export ANDROIDSDK="$ANDROID_SDK_ROOT"
-          export ANDROID_HOME="$ANDROID_SDK_ROOT"
-          export ANDROID_SDK_ROOT="$ANDROID_SDK_ROOT"
-          export ANDROIDNDK="$ANDROID_SDK_ROOT/ndk/25.2.9519653"
           export PATH="$ANDROID_SDK_ROOT/build-tools/33.0.2:$ANDROID_SDK_ROOT/platform-tools:$PATH"
-
           which aidl
           aidl --version || true
-
           buildozer -v android debug
 
       - name: Collect APK(s)
