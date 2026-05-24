@@ -32,40 +32,41 @@ jobs:
             libffi-dev libssl-dev \
             python3-dev
 
-      - name: Set up Android SDK (sdkmanager)
+      - name: Set up Android SDK tools (sdkmanager)
         uses: android-actions/setup-android@v3
 
-      - name: Accept licenses (no broken pipe failure)
-        shell: bash
-        run: |
-          set +o pipefail
-          yes | sdkmanager --licenses
-          status=${PIPESTATUS[1]}
-          exit $status
-
-      - name: Install Android packages into setup-android SDK (includes AIDL)
+      - name: Prepare Buildozer SDK + accept licenses + install Build-Tools (AIDL)
         shell: bash
         run: |
           set -e
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
 
-          sdkmanager --install \
+          SDKROOT="$HOME/.buildozer/android/platform/android-sdk"
+          mkdir -p "$SDKROOT"
+
+          # Accept licenses for THIS sdk_root (avoid "yes: Broken pipe" failing the step)
+          set +o pipefail
+          yes | sdkmanager --sdk_root="$SDKROOT" --licenses
+          status=${PIPESTATUS[1]}
+          set -o pipefail
+          exit $status
+
+          # Install packages into the same sdk_root Buildozer will use
+          sdkmanager --sdk_root="$SDKROOT" --install \
             "platform-tools" \
             "platforms;android-33" \
             "build-tools;33.0.2" \
+            "build-tools;37.0.0" \
             "ndk;25.2.9519653"
 
-          ls -la "$ANDROID_SDK_ROOT/build-tools"
+          ls -la "$SDKROOT/build-tools"
 
-      - name: Force Buildozer to use same SDK/NDK + put aidl on PATH
+      - name: Force Buildozer to use Buildozer SDK/NDK + ensure aidl on PATH
         shell: bash
         run: |
           set -e
-
-          SDKROOT="$ANDROID_SDK_ROOT"
+          SDKROOT="$HOME/.buildozer/android/platform/android-sdk"
           NDKROOT="$SDKROOT/ndk/25.2.9519653"
 
-          # Ensure aidl exists (don’t assume exact build-tools dir)
           AIDL_PATH="$(find "$SDKROOT/build-tools" -type f -name aidl | sort -V | tail -n 1)"
           echo "AIDL_PATH=$AIDL_PATH"
           test -n "$AIDL_PATH"
@@ -74,11 +75,10 @@ jobs:
           echo "$(dirname "$AIDL_PATH")" >> "$GITHUB_PATH"
           echo "$SDKROOT/platform-tools" >> "$GITHUB_PATH"
 
-          # Patch buildozer.spec to force p4a to use THIS SDK/NDK
           python3 - <<'PY'
           import os, re, pathlib
-          sdk = os.environ["ANDROID_SDK_ROOT"]
-          ndk = os.path.join(sdk, "ndk", "25.2.9519653")
+          sdk = os.path.expanduser("~/.buildozer/android/platform/android-sdk")
+          ndk = sdk + "/ndk/25.2.9519653"
           p = pathlib.Path("buildozer.spec")
           s = p.read_text(encoding="utf-8")
 
@@ -93,7 +93,7 @@ jobs:
           s = upsert("android.sdk_path", sdk, s)
           s = upsert("android.ndk_path", ndk, s)
           p.write_text(s, encoding="utf-8")
-          print("Patched buildozer.spec: android.sdk_path + android.ndk_path")
+          print("Patched buildozer.spec to use Buildozer SDK/NDK paths")
           PY
 
       - name: Install Buildozer + Cython
