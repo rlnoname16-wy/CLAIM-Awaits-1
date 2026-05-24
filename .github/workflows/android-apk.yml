@@ -10,21 +10,18 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python 3.11.9
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11.9"
 
-      - name: Set up Java 17
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Install system dependencies
+      - name: Install Linux deps
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -38,14 +35,7 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Accept Android SDK licenses (no broken pipe failure)
-        shell: bash
-        run: |
-          set +o pipefail
-          yes | sdkmanager --licenses
-          exit ${PIPESTATUS[1]}
-
-      - name: Install Android SDK packages (Build-Tools includes aidl)
+      - name: Install SDK packages (aidl is in build-tools)
         shell: bash
         run: |
           sdkmanager --install \
@@ -54,31 +44,36 @@ jobs:
             "build-tools;33.0.2" \
             "ndk;25.2.9519653"
 
-      - name: Locate aidl and add to PATH
+      - name: Accept licenses (avoid broken pipe)
         shell: bash
         run: |
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          set +o pipefail
+          yes | sdkmanager --licenses
+          exit ${PIPESTATUS[1]}
+
+      - name: Export ANDROIDSDK + add aidl to PATH (persist)
+        shell: bash
+        run: |
+          echo "ANDROIDSDK=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
           AIDL_PATH="$(find "$ANDROID_SDK_ROOT/build-tools" -type f -name aidl | sort -V | tail -n 1)"
           echo "AIDL_PATH=$AIDL_PATH"
           test -n "$AIDL_PATH"
-          echo "$(dirname "$AIDL_PATH")" >> "$GITHUB_PATH"
-          export PATH="$(dirname "$AIDL_PATH"):$PATH"
-          aidl --version || true
+          echo "PATH=$(dirname "$AIDL_PATH"):$PATH" >> "$GITHUB_ENV"
 
       - name: Install Buildozer + Cython
         run: |
           python -m pip install --upgrade pip
           python -m pip install buildozer cython
 
-      - name: Build APK (debug)
-        env:
-          ANDROIDSDK: ${{ env.ANDROID_SDK_ROOT }}
-          ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
+      - name: Build APK
+        shell: bash
         run: |
+          which aidl
+          aidl --version || true
           buildozer -v android debug
 
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: apk
           path: bin/*.apk
