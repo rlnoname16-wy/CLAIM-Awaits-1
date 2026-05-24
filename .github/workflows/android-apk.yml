@@ -32,13 +32,14 @@ jobs:
             libffi-dev libssl-dev \
             python3-dev
 
-      - name: Set up Android SDK
+      - name: Set up Android SDK (sdkmanager)
         uses: android-actions/setup-android@v3
 
-      - name: Install SDK packages (aidl is in build-tools)
+      - name: Install Android packages (Build-Tools contains aidl)
         shell: bash
         run: |
           set -e
+          SDKROOT="$ANDROID_SDK_ROOT"
           sdkmanager --install \
             "platform-tools" \
             "platforms;android-33" \
@@ -53,19 +54,43 @@ jobs:
           status=${PIPESTATUS[1]}
           exit $status
 
-      - name: Find aidl
+      - name: Force Buildozer to use this SDK/NDK + ensure aidl
         shell: bash
         run: |
           set -e
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-          ls -la "$ANDROID_SDK_ROOT/build-tools" || true
-          find "$ANDROID_SDK_ROOT/build-tools" -type f -name aidl -print || true
+          SDKROOT="$ANDROID_SDK_ROOT"
+          NDKROOT="$SDKROOT/ndk/25.2.9519653"
 
-      - name: Put aidl on PATH (for next steps)
-        shell: bash
-        run: |
-          echo "$ANDROID_SDK_ROOT/build-tools/33.0.2" >> "$GITHUB_PATH"
-          echo "$ANDROID_SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
+          # Pick the newest build-tools folder and ensure aidl exists there
+          BT="$(ls -1 "$SDKROOT/build-tools" | sort -V | tail -n 1)"
+          test -x "$SDKROOT/build-tools/$BT/aidl"
+
+          # Put aidl on PATH for the build step
+          echo "$SDKROOT/build-tools/$BT" >> "$GITHUB_PATH"
+          echo "$SDKROOT/platform-tools" >> "$GITHUB_PATH"
+
+          # Patch buildozer.spec so Buildozer/p4a uses THIS SDK/NDK (not .buildozer's)
+          python3 - <<'PY'
+          import os, re, pathlib
+          sdk = os.environ["ANDROID_SDK_ROOT"]
+          ndk = os.path.join(sdk, "ndk", "25.2.9519653")
+          p = pathlib.Path("buildozer.spec")
+          s = p.read_text(encoding="utf-8")
+
+          def upsert(key, val, text):
+              pat = re.compile(rf"^\s*{re.escape(key)}\s*=.*$", re.M)
+              if pat.search(text):
+                  return pat.sub(f"{key} = {val}", text)
+              # insert before [buildozer] if present, else append
+              m = re.search(r"^$$buildozer$$\s*$", text, re.M)
+              ins = f"{key} = {val}\n"
+              return text[:m.start()] + ins + text[m.start():] if m else text + "\n" + ins
+
+          s = upsert("android.sdk_path", sdk, s)
+          s = upsert("android.ndk_path", ndk, s)
+          p.write_text(s, encoding="utf-8")
+          print("Patched buildozer.spec with android.sdk_path and android.ndk_path")
+          PY
 
       - name: Install Buildozer + Cython
         run: |
@@ -76,9 +101,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          export ANDROIDSDK="$ANDROID_SDK_ROOT"
-          export ANDROID_HOME="$ANDROID_SDK_ROOT"
-          which aidl || true
+          which aidl
           aidl --version || true
           buildozer -v android debug
 
