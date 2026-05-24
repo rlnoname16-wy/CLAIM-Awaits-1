@@ -74,8 +74,8 @@ jobs:
           set -e
           mkdir -p dist
           echo "Searching for APKs..."
-          find . -type f $ -name "*-debug.apk" -o -name "*-release.apk" -o -name "*.apk" $ -print
-          find . -type f $ -name "*-debug.apk" -o -name "*-release.apk" -o -name "*.apk" $ -exec cp -v {} dist/ \;
+          find . -type f -name "*.apk" -print
+          find . -type f -name "*.apk" -exec cp -v {} dist/ \;
           ls -la dist
 
       - name: Upload APK artifact
