@@ -46,7 +46,13 @@ jobs:
             "platforms;android-33" \
             "build-tools;33.0.2" \
             "ndk;25.2.9519653"
+
+      - name: Accept Android SDK licenses (no broken pipe failure)
+        shell: bash
+        run: |
+          set +o pipefail
           yes | sdkmanager --licenses
+          exit ${PIPESTATUS[1]}
 
       - name: Ensure aidl on PATH
         shell: bash
