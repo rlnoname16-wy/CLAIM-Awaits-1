@@ -38,6 +38,13 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Accept Android SDK licenses (no broken pipe failure)
+        shell: bash
+        run: |
+          set +o pipefail
+          yes | sdkmanager --licenses
+          exit ${PIPESTATUS[1]}
+
       - name: Install Android SDK packages (Build-Tools includes aidl)
         shell: bash
         run: |
@@ -47,19 +54,16 @@ jobs:
             "build-tools;33.0.2" \
             "ndk;25.2.9519653"
 
-      - name: Accept Android SDK licenses (no broken pipe failure)
+      - name: Locate aidl and add to PATH
         shell: bash
         run: |
-          set +o pipefail
-          yes | sdkmanager --licenses
-          exit ${PIPESTATUS[1]}
-
-      - name: Ensure aidl on PATH
-        shell: bash
-        run: |
-          echo "$ANDROID_SDK_ROOT/build-tools/33.0.2" >> "$GITHUB_PATH"
-          echo "$ANDROID_SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
-          aidl --version
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          AIDL_PATH="$(find "$ANDROID_SDK_ROOT/build-tools" -type f -name aidl | sort -V | tail -n 1)"
+          echo "AIDL_PATH=$AIDL_PATH"
+          test -n "$AIDL_PATH"
+          echo "$(dirname "$AIDL_PATH")" >> "$GITHUB_PATH"
+          export PATH="$(dirname "$AIDL_PATH"):$PATH"
+          aidl --version || true
 
       - name: Install Buildozer + Cython
         run: |
